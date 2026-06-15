@@ -3,11 +3,20 @@ package aps
 import csw.params.commands.CommandResponse
 import csw.params.commands.Setup
 import csw.prefix.javadsl.JSubsystem
+import esw.ocs.api.models.ObsMode
 import esw.ocs.dsl.core.ScriptScope
+import esw.ocs.dsl.highlevel.RichSequencer
 import kotlinx.coroutines.delay
 import csw.params.core.models.Id
 import kotlin.time.Duration.Companion.seconds
 import java.util.UUID
+
+enum class SequencerLabel { A, B, C, D }
+
+fun ScriptScope.getPeasSequencer(source: SequencerLabel, target: SequencerLabel): RichSequencer {
+    val targetMode = obsMode.name().replace("Sequencer${source.name}", "Sequencer${target.name}")
+    return Sequencer(JSubsystem.APS, ObsMode(targetMode), 120.seconds)
+}
 
 suspend fun ScriptScope.sendToGlc(command: Setup): CommandResponse.SubmitResponse {
     val glc = Assembly(JSubsystem.M1CS, "GLC", defaultTimeout = 60.seconds)
@@ -20,4 +29,3 @@ suspend fun ScriptScope.sendToGlc(command: Setup): CommandResponse.SubmitRespons
         CommandResponse.Completed(Id(UUID.randomUUID().toString()))
     }
 }
-

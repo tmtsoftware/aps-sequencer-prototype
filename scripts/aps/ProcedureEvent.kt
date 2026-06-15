@@ -3,7 +3,6 @@ package aps
 import csw.params.events.SystemEvent
 import csw.params.events.EventName
 import csw.prefix.models.Prefix
-import csw.prefix.javadsl.JSubsystem
 import csw.params.javadsl.JKeyType
 import csw.params.javadsl.JUnits
 
@@ -18,7 +17,6 @@ object ProcedureEventType {
     const val VIZ_DISPLAY   = "VIZ_DISPLAY"
 }
 
-private val eventPrefix  = Prefix.apply(JSubsystem.APS, "sequencer")
 private val eventName    = EventName("apsProcedureEvent")
 
 private val typeKey      = JKeyType.StringKey().make("type",      JUnits.NoUnits)
@@ -27,12 +25,13 @@ private val helpKeyKey   = JKeyType.StringKey().make("helpKey",   JUnits.NoUnits
 private val messageIdKey = JKeyType.StringKey().make("messageId", JUnits.NoUnits)
 
 fun buildProcedureEvent(
+    source: Prefix,
     type: String,
     dialogKey: String,
     helpKey: String,
     messageId: String
 ): SystemEvent =
-    SystemEvent(eventPrefix, eventName)
+    SystemEvent(source, eventName)
         .add(typeKey.set(type))
         .add(dialogKeyKey.set(dialogKey))
         .add(helpKeyKey.set(helpKey))

@@ -1,20 +1,18 @@
 package aps
 import csw.prefix.models.Prefix
 
+import csw.prefix.javadsl.JSubsystem
 import esw.ocs.dsl.core.reusableScript
 import esw.ocs.dsl.core.ScriptScope
-import csw.prefix.javadsl.JSubsystem
 import kotlin.time.Duration.Companion.seconds
 import kotlinx.coroutines.delay
 
-val rigidBodyAndSegmentFigure = reusableScript {
+val rigidBodyAndSegmentFigureA = reusableScript {
 
     val scriptScope: ScriptScope = this
 
-    val glc = Assembly(JSubsystem.M1CS, "GLC", defaultTimeout = 60.seconds)
-
     onSetup("cmd-m1cs-moves") { command ->
-        publishEvent(buildProcedureEvent(Prefix.apply(prefix),
+        publishEvent(buildProcedureEvent(Prefix.apply(prefix), 
             type      = ProcedureEventType.INFO_MESSAGE,
             dialogKey = "cmd-m1cs-moves-start",
             helpKey   = "help.cmd-m1cs-moves",
@@ -22,7 +20,7 @@ val rigidBodyAndSegmentFigure = reusableScript {
         ))
         val response = scriptScope.sendToGlc(command)
         println("cmd-m1cs-moves response: $response")
-        publishEvent(buildProcedureEvent(Prefix.apply(prefix),
+        publishEvent(buildProcedureEvent(Prefix.apply(prefix), 
             type      = ProcedureEventType.INFO_MESSAGE,
             dialogKey = "cmd-m1cs-moves-complete",
             helpKey   = "help.cmd-m1cs-moves",
@@ -31,18 +29,15 @@ val rigidBodyAndSegmentFigure = reusableScript {
     }
 
     onSetup("calc-colorstep") { command ->
-        publishEvent(buildProcedureEvent(Prefix.apply(prefix),
+        publishEvent(buildProcedureEvent(Prefix.apply(prefix), 
             type      = ProcedureEventType.INFO_MESSAGE,
             dialogKey = "calc-colorstep-start",
             helpKey   = "help.calc-colorstep",
             messageId = "msg.calc-colorstep.start"
         ))
         delay(2.seconds)
-        println("RigidBodyAndSegmentFigure: received calc-colorstep " + obsMode)
-        if (obsMode.name() == "APS_software_only_mode") {
-            println("got it")
-        }
-        publishEvent(buildProcedureEvent(Prefix.apply(prefix),
+        println("RigidBodyAndSegmentFigureA: received calc-colorstep")
+        publishEvent(buildProcedureEvent(Prefix.apply(prefix), 
             type      = ProcedureEventType.INFO_MESSAGE,
             dialogKey = "calc-colorstep-complete",
             helpKey   = "help.calc-colorstep",
@@ -51,15 +46,15 @@ val rigidBodyAndSegmentFigure = reusableScript {
     }
 
     onSetup("calc-tt-offsets-to-acts") { command ->
-        publishEvent(buildProcedureEvent(Prefix.apply(prefix),
+        publishEvent(buildProcedureEvent(Prefix.apply(prefix), 
             type      = ProcedureEventType.INFO_MESSAGE,
             dialogKey = "calc-tt-offsets-start",
             helpKey   = "help.calc-tt-offsets-to-acts",
             messageId = "msg.calc-tt-offsets-to-acts.start"
         ))
         delay(2.seconds)
-        println("RigidBodyAndSegmentFigure: received calc-tt-offsets-to-acts")
-        publishEvent(buildProcedureEvent(Prefix.apply(prefix),
+        println("RigidBodyAndSegmentFigureA: received calc-tt-offsets-to-acts")
+        publishEvent(buildProcedureEvent(Prefix.apply(prefix), 
             type      = ProcedureEventType.INFO_MESSAGE,
             dialogKey = "calc-tt-offsets-complete",
             helpKey   = "help.calc-tt-offsets-to-acts",
@@ -68,19 +63,46 @@ val rigidBodyAndSegmentFigure = reusableScript {
     }
 
     onSetup("calc-decompose-acts") { command ->
-        publishEvent(buildProcedureEvent(Prefix.apply(prefix),
+        publishEvent(buildProcedureEvent(Prefix.apply(prefix), 
             type      = ProcedureEventType.INFO_MESSAGE,
             dialogKey = "calc-decompose-acts-start",
             helpKey   = "help.calc-decompose-acts",
             messageId = "msg.calc-decompose-acts.start"
         ))
         delay(2.seconds)
-        println("RigidBodyAndSegmentFigure: received calc-decompose-acts")
-        publishEvent(buildProcedureEvent(Prefix.apply(prefix),
+        println("RigidBodyAndSegmentFigureA: received calc-decompose-acts")
+        publishEvent(buildProcedureEvent(Prefix.apply(prefix), 
             type      = ProcedureEventType.INFO_MESSAGE,
             dialogKey = "calc-decompose-acts-complete",
             helpKey   = "help.calc-decompose-acts",
             messageId = "msg.calc-decompose-acts.complete"
+        ))
+    }
+
+    onSetup("send-sequence-to-sequencerB") { command ->
+        println("RigidBodyAndSegmentFigureA: received send-sequence-to-sequencerB")
+        publishEvent(buildProcedureEvent(Prefix.apply(prefix), 
+            type      = ProcedureEventType.INFO_MESSAGE,
+            dialogKey = "send-sequence-to-sequencerB-start",
+            helpKey   = "help.send-sequence-to-sequencerB",
+            messageId = "msg.send-sequence-to-sequencerB.start"
+        ))
+
+        val askUser    = Setup("APS.apsPeasSequencerA", "ask-user")
+        val sequencerB = scriptScope.getPeasSequencer(SequencerLabel.A, SequencerLabel.B)
+
+        println("RigidBodyAndSegmentFigureA: submitting ask-user sequence to sequencerB")
+        val response = sequencerB.submitAndWait(
+            sequenceOf(askUser),
+            timeout = 120.seconds
+        )
+        println("RigidBodyAndSegmentFigureA: sequencerB response: $response")
+
+        publishEvent(buildProcedureEvent(Prefix.apply(prefix), 
+            type      = ProcedureEventType.INFO_MESSAGE,
+            dialogKey = "send-sequence-to-sequencerB-complete",
+            helpKey   = "help.send-sequence-to-sequencerB",
+            messageId = "msg.send-sequence-to-sequencerB.complete"
         ))
     }
 
