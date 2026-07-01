@@ -5,10 +5,10 @@ import csw.prefix.models.Prefix
 
 script {
 
-    loadScripts(commonA, rigidBodyAndSegmentFigureA)
+    loadScripts(commonD)
 
     onGoOnline {
-        println("PeasSequencerA: sequencer going ONLINE")
+        println("PeasSequencerD: sequencer going ONLINE")
         publishEvent(buildProcedureEvent(Prefix.apply(prefix),
             type      = ProcedureEventType.INFO_MESSAGE,
             dialogKey = "sequencer-online",
@@ -18,7 +18,7 @@ script {
     }
 
     onGoOffline {
-        println("PeasSequencerA: sequencer going OFFLINE")
+        println("PeasSequencerD: sequencer going OFFLINE")
         publishEvent(buildProcedureEvent(Prefix.apply(prefix),
             type      = ProcedureEventType.INFO_MESSAGE,
             dialogKey = "sequencer-offline",
@@ -28,7 +28,7 @@ script {
     }
 
     onAbortSequence {
-        println("PeasSequencerA: sequence ABORTED")
+        println("PeasSequencerD: sequence ABORTED")
         publishEvent(buildProcedureEvent(Prefix.apply(prefix),
             type      = ProcedureEventType.WARN_MESSAGE,
             dialogKey = "sequence-aborted",
@@ -38,7 +38,7 @@ script {
     }
 
     onStop {
-        println("PeasSequencerA: sequencer STOPPED")
+        println("PeasSequencerD: sequencer STOPPED")
         publishEvent(buildProcedureEvent(Prefix.apply(prefix),
             type      = ProcedureEventType.WARN_MESSAGE,
             dialogKey = "sequencer-stopped",
@@ -48,7 +48,7 @@ script {
     }
 
     onShutdown {
-        println("PeasSequencerA: sequencer SHUTDOWN - cleaning up")
+        println("PeasSequencerD: sequencer SHUTDOWN - cleaning up")
         publishEvent(buildProcedureEvent(Prefix.apply(prefix),
             type      = ProcedureEventType.INFO_MESSAGE,
             dialogKey = "sequencer-shutdown",
@@ -58,7 +58,7 @@ script {
     }
 
     onGlobalError { error ->
-        println("PeasSequencerA: unhandled error - ${error.reason}")
+        println("PeasSequencerD: unhandled error - ${error.reason}")
         publishEvent(buildProcedureEvent(Prefix.apply(prefix),
             type      = ProcedureEventType.WARN_MESSAGE,
             dialogKey = "sequencer-error",

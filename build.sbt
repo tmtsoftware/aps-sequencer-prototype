@@ -30,6 +30,12 @@ lazy val scripts = project
     Compile / unmanagedSources / excludeFilter := "*.conf",
     Compile / unmanagedResourceDirectories := Seq(baseDirectory.value),
     Compile / unmanagedResources / includeFilter := "*.conf",
+    // Exclude sbt's own target/ output directory from resource scanning.
+    // Without this, copyResources copies target/classes into itself on every
+    // build, nesting one level deeper each time until the OS filename length
+    // limit is hit (FileNotFoundException: File name too long).
+    Compile / unmanagedResources / excludeFilter :=
+      (Compile / unmanagedResources / excludeFilter).value || new SimpleFileFilter(_.getCanonicalPath.contains("/target/")),
     libraryDependencies ++= Seq(
       Libs.`esw-ocs-dsl-kt`,
       Libs.`esw-ocs-app`

@@ -19,6 +19,7 @@ object ProcedureEventType {
     const val WARN_MESSAGE  = "WARN_MESSAGE"
     const val USER_PROMPT   = "USER_PROMPT"
     const val VIZ_DISPLAY   = "VIZ_DISPLAY"
+    const val ITERATION     = "ITERATION"
 }
 
 private val eventName    = EventName("apsProcedureEvent")

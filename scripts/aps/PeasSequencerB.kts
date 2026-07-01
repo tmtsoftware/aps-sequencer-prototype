@@ -1,16 +1,15 @@
 package aps
 
-
 import esw.ocs.dsl.core.script
 import csw.prefix.models.Prefix
 
 script {
 
-    loadScripts(procedureCommons, rigidBodyAndSegmentFigureB)
+    loadScripts(commonB, rigidBodyAndSegmentFigureB)
 
     onGoOnline {
         println("PeasSequencerB: sequencer going ONLINE")
-        publishEvent(buildProcedureEvent(Prefix.apply(prefix), 
+        publishEvent(buildProcedureEvent(Prefix.apply(prefix),
             type      = ProcedureEventType.INFO_MESSAGE,
             dialogKey = "sequencer-online",
             helpKey   = "help.sequencer.online",
@@ -20,7 +19,7 @@ script {
 
     onGoOffline {
         println("PeasSequencerB: sequencer going OFFLINE")
-        publishEvent(buildProcedureEvent(Prefix.apply(prefix), 
+        publishEvent(buildProcedureEvent(Prefix.apply(prefix),
             type      = ProcedureEventType.INFO_MESSAGE,
             dialogKey = "sequencer-offline",
             helpKey   = "help.sequencer.offline",
@@ -30,7 +29,7 @@ script {
 
     onAbortSequence {
         println("PeasSequencerB: sequence ABORTED")
-        publishEvent(buildProcedureEvent(Prefix.apply(prefix), 
+        publishEvent(buildProcedureEvent(Prefix.apply(prefix),
             type      = ProcedureEventType.WARN_MESSAGE,
             dialogKey = "sequence-aborted",
             helpKey   = "help.sequence.aborted",
@@ -40,7 +39,7 @@ script {
 
     onStop {
         println("PeasSequencerB: sequencer STOPPED")
-        publishEvent(buildProcedureEvent(Prefix.apply(prefix), 
+        publishEvent(buildProcedureEvent(Prefix.apply(prefix),
             type      = ProcedureEventType.WARN_MESSAGE,
             dialogKey = "sequencer-stopped",
             helpKey   = "help.sequencer.stopped",
@@ -50,7 +49,7 @@ script {
 
     onShutdown {
         println("PeasSequencerB: sequencer SHUTDOWN - cleaning up")
-        publishEvent(buildProcedureEvent(Prefix.apply(prefix), 
+        publishEvent(buildProcedureEvent(Prefix.apply(prefix),
             type      = ProcedureEventType.INFO_MESSAGE,
             dialogKey = "sequencer-shutdown",
             helpKey   = "help.sequencer.shutdown",
@@ -60,7 +59,7 @@ script {
 
     onGlobalError { error ->
         println("PeasSequencerB: unhandled error - ${error.reason}")
-        publishEvent(buildProcedureEvent(Prefix.apply(prefix), 
+        publishEvent(buildProcedureEvent(Prefix.apply(prefix),
             type      = ProcedureEventType.WARN_MESSAGE,
             dialogKey = "sequencer-error",
             helpKey   = "help.sequencer.error",
