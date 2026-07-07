@@ -4,6 +4,7 @@ import esw.ocs.dsl.core.reusableScript
 import esw.ocs.dsl.core.ScriptScope
 import esw.ocs.dsl.params.stringKey
 import esw.ocs.dsl.params.floatKey
+import esw.ocs.dsl.params.intKey
 import esw.ocs.dsl.params.kGet
 import esw.ocs.dsl.params.first
 import kotlin.time.Duration.Companion.seconds
@@ -84,6 +85,40 @@ val commonB = reusableScript {
             dialogKey = "correctPitTracking-complete",
             helpKey   = "help.correctPitTracking",
             messageId = "msg.correctPitTracking.complete"
+        ))
+    }
+
+    // ICD 31.2.1.9 — sets up the PSH optical arm for taking PSH images, performed during
+    // on-sky procedure startup. pshFilter, pshPupilMask, procedureId, observationId: required
+    // pshRoiStartRow/Col/Width/Height, pshBinning: optional
+    // Completion Type: longRunning
+    onSetup("setupPshOpticalArm") { command ->
+        val pshFilter: String       = command.kGet(stringKey("pshFilter"))!!.first
+        val pshPupilMask: String    = command.kGet(stringKey("pshPupilMask"))!!.first
+        val pshRoiStartRow: Int?    = command.kGet(intKey("pshRoiStartRow"))?.first
+        val pshRoiStartCol: Int?    = command.kGet(intKey("pshRoiStartCol"))?.first
+        val pshRoiWidth: Int?       = command.kGet(intKey("pshRoiWidth"))?.first
+        val pshRoiHeight: Int?      = command.kGet(intKey("pshRoiHeight"))?.first
+        val pshBinning: Int?        = command.kGet(intKey("pshBinning"))?.first
+        val procedureId: String     = command.kGet(stringKey("procedureId"))!!.first
+        val observationId: String   = command.kGet(stringKey("observationId"))!!.first
+
+        publishEvent(buildProcedureEvent(Prefix.apply(prefix),
+            type      = ProcedureEventType.INFO_MESSAGE,
+            dialogKey = "setupPshOpticalArm-start",
+            helpKey   = "help.setupPshOpticalArm",
+            messageId = "msg.setupPshOpticalArm.start"
+        ))
+        println("CommonB: setupPshOpticalArm — pshFilter=$pshFilter, pshPupilMask=$pshPupilMask, " +
+                "pshRoiStartRow=$pshRoiStartRow, pshRoiStartCol=$pshRoiStartCol, pshRoiWidth=$pshRoiWidth, " +
+                "pshRoiHeight=$pshRoiHeight, pshBinning=$pshBinning, procedureId=$procedureId, observationId=$observationId")
+        // TODO: implement — sets up the PSH optical arm for taking PSH images during on-sky procedure startup
+        delay(1.seconds)
+        publishEvent(buildProcedureEvent(Prefix.apply(prefix),
+            type      = ProcedureEventType.INFO_MESSAGE,
+            dialogKey = "setupPshOpticalArm-complete",
+            helpKey   = "help.setupPshOpticalArm",
+            messageId = "msg.setupPshOpticalArm.complete"
         ))
     }
 
