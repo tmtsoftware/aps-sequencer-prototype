@@ -320,10 +320,11 @@ val rigidBodyAndSegmentFigureA = reusableScript {
         val seqC2 = aps.deserializeSequence(rbsfC2JsonStr)
 
         // TODO: In parallel — send M1 cmds, calc WH cmds, submit sub-sequences to B and C
-        val responseB = sequencerB.submitAndWait(seqB2, timeout = 120.seconds)
-        val responseC = sequencerC.submitAndWait(seqC2, timeout = 120.seconds)
-        println("RigidBodyAndSegmentFigureA: rbsfCmdM1CalcWhCmdsWhileAskOpCmdM2 — seqB: $responseB, seqC: $responseC")
-
+        par(
+            { sequencerB.submitAndWait(seqB2, timeout = 120.seconds) },
+            { sequencerC.submitAndWait(seqC2, timeout = 120.seconds) }
+        )
+ 
         publishEvent(buildProcedureEvent(Prefix.apply(prefix),
             type      = ProcedureEventType.INFO_MESSAGE,
             dialogKey = "rbsfCmdM1CalcWhCmdsWhileAskOpCmdM2-complete",
@@ -350,10 +351,10 @@ val rigidBodyAndSegmentFigureA = reusableScript {
         val seqB3 = aps.deserializeSequence(rbsfB3JsonStr)
         val seqC3 = aps.deserializeSequence(rbsfC3JsonStr)
 
-        // TODO: In parallel — render WH display and send WH cmds (seqC3) while sending M2 cmds (seqB3)
-        val responseB = sequencerB.submitAndWait(seqB3, timeout = 120.seconds)
-        val responseC = sequencerC.submitAndWait(seqC3, timeout = 120.seconds)
-        println("RigidBodyAndSegmentFigureA: rbsfAskAndCmdWhWhileCmdM2 — seqB: $responseB, seqC: $responseC")
+        par(
+            { sequencerB.submitAndWait(seqB3, timeout = 120.seconds) },
+            { sequencerC.submitAndWait(seqC3, timeout = 120.seconds) }
+        )
 
         publishEvent(buildProcedureEvent(Prefix.apply(prefix),
             type      = ProcedureEventType.INFO_MESSAGE,
