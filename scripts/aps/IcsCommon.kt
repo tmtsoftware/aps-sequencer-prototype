@@ -7,6 +7,7 @@ import esw.ocs.dsl.params.kGet
 import esw.ocs.dsl.params.first
 import kotlin.time.Duration.Companion.seconds
 import kotlinx.coroutines.delay
+import esw.ocs.dsl.par
 
 val icsCommon = reusableScript {
 
@@ -71,6 +72,10 @@ val icsCommon = reusableScript {
 
     // ICD 16.2.1.3 homeMechanisms — no parameters
     // Completion Type: longRunning
+    // Homes all ICD-defined "home"-capable ICS/PIT assemblies in parallel (ICD sections
+    // 6.2, 9.2-13.2, 18.2-20.2, 23.2-25.2, 27.2-29.2). Excludes assemblies without a plain
+    // "home" command: ABE.Enclosure, ABE.Shutter, all Detector assemblies, HCD.GalilMotion
+    // (has homeAxis, not home), ICS.Sequencer itself, PIT.Sequencer, and SAM.
     onSetup("homeMechanisms") { command ->
         publishEvent(buildProcedureEvent(Prefix.apply(prefix),
             type      = ProcedureEventType.INFO_MESSAGE,
@@ -79,11 +84,26 @@ val icsCommon = reusableScript {
             messageId = "msg.homeMechanisms.start"
         ))
         println("IcsCommon: homeMechanisms — homing all APS Instrument mechanisms")
-        // TODO: implement — homes all APS Instrument mechanisms.
-        // Per ICD 16.3, likely involves the mechanism-owning assemblies, e.g.:
-        // FOC.KMirror.setMode, APT.FilterWheel.selectFilter, APT.Detector.configDetector,
-        // STIM.InsertionStage.selectSource. Exact set/order TBD once mechanism list is confirmed.
-        delay(1.seconds)
+
+
+        val responses = par(
+            { sendAssemblyCommand("ICS.APT.FilterWheel", Setup(prefix, "home")) },
+            { sendAssemblyCommand("ICS.FOC.CalibrationSourceStage", Setup(prefix, "home")) },
+            { sendAssemblyCommand("ICS.FOC.CollimatorUnit", Setup(prefix, "home")) },
+            { sendAssemblyCommand("ICS.FOC.KMirror", Setup(prefix, "home")) },
+            { sendAssemblyCommand("ICS.FOC.SteeringBeamSplitterStage", Setup(prefix, "home")) },
+            { sendAssemblyCommand("ICS.FOC.TiltPlate", Setup(prefix, "home")) },
+            { sendAssemblyCommand("ICS.PSH.FilterWheel", Setup(prefix, "home")) },
+            { sendAssemblyCommand("ICS.PSH.FocusStage", Setup(prefix, "home")) },
+            { sendAssemblyCommand("ICS.PSH.PupilMaskWheel", Setup(prefix, "home")) },
+            { sendAssemblyCommand("ICS.STIM.FiberSourceStage", Setup(prefix, "home")) },
+            { sendAssemblyCommand("ICS.STIM.InsertionStage", Setup(prefix, "home")) },
+            { sendAssemblyCommand("ICS.STIM.PupilMaskStage", Setup(prefix, "home")) },
+            { sendAssemblyCommand("ICS.PIT.FilterWheel", Setup(prefix, "home")) },
+            { sendAssemblyCommand("ICS.PIT.FocusStage", Setup(prefix, "home")) },
+            { sendAssemblyCommand("ICS.PIT.PupilMaskWheel", Setup(prefix, "home")) }
+        )
+
         println("IcsCommon: homeMechanisms — homing all APS Instrument mechanisms complete")
 
         publishEvent(buildProcedureEvent(Prefix.apply(prefix),
