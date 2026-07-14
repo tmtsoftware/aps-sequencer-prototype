@@ -1,13 +1,169 @@
 package aps
 import csw.prefix.models.Prefix
+import csw.params.core.models.Choice
 import esw.ocs.dsl.core.reusableScript
+import esw.ocs.dsl.core.CommandHandlerScope
 import esw.ocs.dsl.params.stringKey
 import esw.ocs.dsl.params.floatKey
+import esw.ocs.dsl.params.choiceKey
+import esw.ocs.dsl.params.choicesOf
 import esw.ocs.dsl.params.kGet
 import esw.ocs.dsl.params.first
 import kotlin.time.Duration.Companion.seconds
 import kotlinx.coroutines.delay
 import esw.ocs.dsl.par
+
+// Moves all ICD-defined "moveToDefaultPosition"-capable ICS/PIT assemblies to their default
+// position, in parallel. Same 15-assembly set as homeMechanisms (ICD sections 6.2, 9.2-13.2,
+// 18.2-20.2, 23.2-25.2, 27.2-29.2). Called from setOperatingMode when targeting STANDBY_MODE.
+suspend fun CommandHandlerScope.moveAllMechanismsToDefaultPosition() {
+    par(
+        { sendAssemblyCommand("ICS.APT.FilterWheel", Setup(prefix, "moveToDefaultPosition")) },
+        { sendAssemblyCommand("ICS.FOC.CalibrationSourceStage", Setup(prefix, "moveToDefaultPosition")) },
+        { sendAssemblyCommand("ICS.FOC.CollimatorUnit", Setup(prefix, "moveToDefaultPosition")) },
+        { sendAssemblyCommand("ICS.FOC.KMirror", Setup(prefix, "moveToDefaultPosition")) },
+        { sendAssemblyCommand("ICS.FOC.SteeringBeamSplitterStage", Setup(prefix, "moveToDefaultPosition")) },
+        { sendAssemblyCommand("ICS.FOC.TiltPlate", Setup(prefix, "moveToDefaultPosition")) },
+        { sendAssemblyCommand("ICS.PSH.FilterWheel", Setup(prefix, "moveToDefaultPosition")) },
+        { sendAssemblyCommand("ICS.PSH.FocusStage", Setup(prefix, "moveToDefaultPosition")) },
+        { sendAssemblyCommand("ICS.PSH.PupilMaskWheel", Setup(prefix, "moveToDefaultPosition")) },
+        { sendAssemblyCommand("ICS.STIM.FiberSourceStage", Setup(prefix, "moveToDefaultPosition")) },
+        { sendAssemblyCommand("ICS.STIM.InsertionStage", Setup(prefix, "moveToDefaultPosition")) },
+        { sendAssemblyCommand("ICS.STIM.PupilMaskStage", Setup(prefix, "moveToDefaultPosition")) },
+        { sendAssemblyCommand("ICS.PIT.FilterWheel", Setup(prefix, "moveToDefaultPosition")) },
+        { sendAssemblyCommand("ICS.PIT.FocusStage", Setup(prefix, "moveToDefaultPosition")) },
+        { sendAssemblyCommand("ICS.PIT.PupilMaskWheel", Setup(prefix, "moveToDefaultPosition")) }
+    )
+}
+
+// ICD 16.3 mechanism/mode state table — the four commands here are identical across
+// STANDBY_MODE and ON_SKY_MODE (stimulus source off, sky light source selected, calibration
+// source stage parked at field-stop with zero intensity). Only ABE.Shutter/ABE.Enclosure
+// differ between the two modes, so those are handled separately below.
+// NOTE: .set(...)/.add(...) usage here is inferred from standard CSW Java API convention,
+// not yet confirmed against this project's actual Setup/Key classes -- first compile will tell.
+private suspend fun CommandHandlerScope.setCommonOpticalPathState() {
+    par(
+        {
+            sendAssemblyCommand("ICS.STIM.FiberSourceStage", Setup(prefix, "setSourceIntensity")
+                .add(choiceKey("sourcePower", choicesOf("ON", "OFF")).set(Choice("OFF")))
+                .add(floatKey("sourceIntensity").set(0.0f)))
+        },
+        {
+            sendAssemblyCommand("ICS.STIM.InsertionStage", Setup(prefix, "selectSource")
+                .add(choiceKey("lightSource", choicesOf("SKY", "STIMULUS")).set(Choice("SKY"))))
+        },
+        {
+            sendAssemblyCommand("ICS.FOC.CalibrationSourceStage", Setup(prefix, "setOptic")
+                .add(choiceKey("optic", choicesOf("CALIBRATION_SOURCE", "ZERNIKE1", "ZERNIKE2", "FIELD_STOP", "OPEN")).set(Choice("FIELD_STOP"))))
+        },
+        {
+            sendAssemblyCommand("ICS.FOC.CalibrationSourceStage", Setup(prefix, "setSourceIntensity")
+                .add(floatKey("sourceIntensity").set(0.0f)))
+        }
+    )
+}
+
+// ICD 16.3: STANDBY_MODE — shutter CLOSE, purge air ON, plus the shared optical path state.
+suspend fun CommandHandlerScope.setStandbyModeMechanismStates() {
+    setCommonOpticalPathState()
+    par(
+        {
+            sendAssemblyCommand("ICS.ABE.Shutter", Setup(prefix, "commandShutter")
+                .add(choiceKey("command", choicesOf("OPEN", "CLOSE")).set(Choice("CLOSE"))))
+        },
+        {
+            sendAssemblyCommand("ICS.ABE.Enclosure", Setup(prefix, "commandPurgeAir")
+                .add(choiceKey("action", choicesOf("ON", "OFF")).set(Choice("ON"))))
+        }
+    )
+}
+
+// ICD 16.3: ON_SKY_MODE — shutter OPEN, purge air OFF, plus the shared optical path state.
+suspend fun CommandHandlerScope.setOnSkyModeMechanismStates() {
+    setCommonOpticalPathState()
+    par(
+        {
+            sendAssemblyCommand("ICS.ABE.Shutter", Setup(prefix, "commandShutter")
+                .add(choiceKey("command", choicesOf("OPEN", "CLOSE")).set(Choice("OPEN"))))
+        },
+        {
+            sendAssemblyCommand("ICS.ABE.Enclosure", Setup(prefix, "commandPurgeAir")
+                .add(choiceKey("action", choicesOf("ON", "OFF")).set(Choice("OFF"))))
+        }
+    )
+}
+
+// ICD 16.3: shutter closed + purge air off — shared between CALIBRATION_SOURCE_MODE and
+// STIMULUS_SOURCE_MODE (both keep the enclosure sealed and dry while an internal source is in use).
+private suspend fun CommandHandlerScope.setShutterClosedPurgeOffState() {
+    par(
+        {
+            sendAssemblyCommand("ICS.ABE.Shutter", Setup(prefix, "commandShutter")
+                .add(choiceKey("command", choicesOf("OPEN", "CLOSE")).set(Choice("CLOSE"))))
+        },
+        {
+            sendAssemblyCommand("ICS.ABE.Enclosure", Setup(prefix, "commandPurgeAir")
+                .add(choiceKey("action", choicesOf("ON", "OFF")).set(Choice("OFF"))))
+        }
+    )
+}
+
+// ICD 16.3: CALIBRATION_SOURCE_MODE — internal calibration source active, stimulus fiber
+// source off, sky path selected on the insertion stage, calibration optic selected, shutter
+// closed, purge air off.
+// NOTE: ICD table specifies calibration source intensity as ">0%" without a specific value;
+// using 100.0 (full intensity) as a placeholder -- adjust if a different default is wanted.
+suspend fun CommandHandlerScope.setCalibrationSourceModeMechanismStates() {
+    par(
+        {
+            sendAssemblyCommand("ICS.STIM.FiberSourceStage", Setup(prefix, "setSourceIntensity")
+                .add(choiceKey("sourcePower", choicesOf("ON", "OFF")).set(Choice("OFF")))
+                .add(floatKey("sourceIntensity").set(0.0f)))
+        },
+        {
+            sendAssemblyCommand("ICS.STIM.InsertionStage", Setup(prefix, "selectSource")
+                .add(choiceKey("lightSource", choicesOf("SKY", "STIMULUS")).set(Choice("SKY"))))
+        },
+        {
+            sendAssemblyCommand("ICS.FOC.CalibrationSourceStage", Setup(prefix, "setOptic")
+                .add(choiceKey("optic", choicesOf("CALIBRATION_SOURCE", "ZERNIKE1", "ZERNIKE2", "FIELD_STOP", "OPEN")).set(Choice("CALIBRATION_SOURCE"))))
+        },
+        {
+            sendAssemblyCommand("ICS.FOC.CalibrationSourceStage", Setup(prefix, "setSourceIntensity")
+                .add(floatKey("sourceIntensity").set(100.0f)))
+        }
+    )
+    setShutterClosedPurgeOffState()
+}
+
+// ICD 16.3: STIMULUS_SOURCE_MODE — stimulus fiber source active, calibration source off
+// (field-stop optic, zero intensity), stimulus path selected on the insertion stage, shutter
+// closed, purge air off.
+// NOTE: ICD table specifies stimulus source intensity as ">0%" without a specific value;
+// using 100.0 (full intensity) as a placeholder -- adjust if a different default is wanted.
+suspend fun CommandHandlerScope.setStimulusSourceModeMechanismStates() {
+    par(
+        {
+            sendAssemblyCommand("ICS.STIM.FiberSourceStage", Setup(prefix, "setSourceIntensity")
+                .add(choiceKey("sourcePower", choicesOf("ON", "OFF")).set(Choice("ON")))
+                .add(floatKey("sourceIntensity").set(100.0f)))
+        },
+        {
+            sendAssemblyCommand("ICS.STIM.InsertionStage", Setup(prefix, "selectSource")
+                .add(choiceKey("lightSource", choicesOf("SKY", "STIMULUS")).set(Choice("STIMULUS"))))
+        },
+        {
+            sendAssemblyCommand("ICS.FOC.CalibrationSourceStage", Setup(prefix, "setOptic")
+                .add(choiceKey("optic", choicesOf("CALIBRATION_SOURCE", "ZERNIKE1", "ZERNIKE2", "FIELD_STOP", "OPEN")).set(Choice("FIELD_STOP"))))
+        },
+        {
+            sendAssemblyCommand("ICS.FOC.CalibrationSourceStage", Setup(prefix, "setSourceIntensity")
+                .add(floatKey("sourceIntensity").set(0.0f)))
+        }
+    )
+    setShutterClosedPurgeOffState()
+}
 
 val icsCommon = reusableScript {
 
@@ -29,11 +185,25 @@ val icsCommon = reusableScript {
             messageId = "msg.setOperatingMode.start"
         ))
         println("IcsCommon: setOperatingMode — operatingMode=$operatingMode")
-        // TODO: implement — sets the APS Instrument Operating Mode.
-        // Per ICD 16.3, will eventually send some combination of downstream commands
-        // depending on the target mode, e.g.: STIM.InsertionStage.selectSource,
-        // STIM.FiberSourceStage.setSourceIntensity, FOC.CalibrationSourceStage.setSourceIntensity,
-        // ABE.Shutter.commandShutter, ABE.Enclosure.commandPurgeAir, FOC.KMirror.setMode.
+        // Per ICD 16.3. STARTUP_MODE is left as a TODO for now.
+        when (operatingMode) {
+            "STANDBY_MODE" -> {
+                moveAllMechanismsToDefaultPosition()
+                setStandbyModeMechanismStates()
+            }
+            "ON_SKY_MODE" -> {
+                setOnSkyModeMechanismStates()
+            }
+            "CALIBRATION_SOURCE_MODE" -> {
+                setCalibrationSourceModeMechanismStates()
+            }
+            "STIMULUS_SOURCE_MODE" -> {
+                setStimulusSourceModeMechanismStates()
+            }
+            "STARTUP_MODE" -> {
+                // TODO: not implemented in this prototype.
+            }
+        }
         delay(1.seconds)
 
         println("IcsCommon: setOperatingMode — operatingMode=$operatingMode complete")
@@ -84,7 +254,6 @@ val icsCommon = reusableScript {
             messageId = "msg.homeMechanisms.start"
         ))
         println("IcsCommon: homeMechanisms — homing all APS Instrument mechanisms")
-
 
         val responses = par(
             { sendAssemblyCommand("ICS.APT.FilterWheel", Setup(prefix, "home")) },
