@@ -3,6 +3,7 @@ import csw.prefix.models.Prefix
 import csw.params.core.models.Choice
 import esw.ocs.dsl.core.reusableScript
 import esw.ocs.dsl.core.CommandHandlerScope
+import esw.ocs.dsl.par
 import esw.ocs.dsl.params.stringKey
 import esw.ocs.dsl.params.floatKey
 import esw.ocs.dsl.params.choiceKey
@@ -11,7 +12,6 @@ import esw.ocs.dsl.params.kGet
 import esw.ocs.dsl.params.first
 import kotlin.time.Duration.Companion.seconds
 import kotlinx.coroutines.delay
-import esw.ocs.dsl.par
 
 // Moves all ICD-defined "moveToDefaultPosition"-capable ICS/PIT assemblies to their default
 // position, in parallel. Same 15-assembly set as homeMechanisms (ICD sections 6.2, 9.2-13.2,
@@ -61,6 +61,23 @@ private suspend fun CommandHandlerScope.setCommonOpticalPathState() {
             sendAssemblyCommand("ICS.FOC.CalibrationSourceStage", Setup(prefix, "setSourceIntensity")
                 .add(floatKey("sourceIntensity").set(0.0f)))
         }
+    )
+}
+
+// ICD 16.3: three preparatory commands issued at the very start of STANDBY_MODE, before the
+// mechanism default-position sweep. K-Mirror is taken out of TRACKING/SLEWING mode before its
+// own moveToDefaultPosition runs (per ICD 11.2.1.6, the setMode parameter is oddly named
+// "offset" despite being the operating-mode enum). PIT loop and detector exposure loop are
+// stopped before mechanisms are parked. Run in parallel; all three complete before this
+// function returns, satisfying the "before default position" ordering requirement for KMirror.
+private suspend fun CommandHandlerScope.prepareForStandby() {
+    par(
+        {
+            sendAssemblyCommand("ICS.FOC.KMirror", Setup(prefix, "setMode")
+                .add(choiceKey("offset", choicesOf("SLEWING", "TRACKING", "MANUAL")).set(Choice("MANUAL"))))
+        },
+        { sendToPitSequencer(Setup(prefix, "stopPitLoop")) },
+        { sendAssemblyCommand("ICS.APT.Detector", Setup(prefix, "stopExposureLoop")) }
     )
 }
 
@@ -188,6 +205,7 @@ val icsCommon = reusableScript {
         // Per ICD 16.3. STARTUP_MODE is left as a TODO for now.
         when (operatingMode) {
             "STANDBY_MODE" -> {
+                prepareForStandby()
                 moveAllMechanismsToDefaultPosition()
                 setStandbyModeMechanismStates()
             }
