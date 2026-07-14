@@ -1,10 +1,13 @@
 package aps
 import csw.prefix.models.Prefix
+import csw.params.core.models.Choice
 import esw.ocs.dsl.core.reusableScript
 import esw.ocs.dsl.core.ScriptScope
 import esw.ocs.dsl.params.stringKey
 import esw.ocs.dsl.params.floatKey
 import esw.ocs.dsl.params.intKey
+import esw.ocs.dsl.params.choiceKey
+import esw.ocs.dsl.params.choicesOf
 import esw.ocs.dsl.params.kGet
 import esw.ocs.dsl.params.first
 import kotlin.time.Duration.Companion.seconds
@@ -93,8 +96,8 @@ val commonB = reusableScript {
     // pshRoiStartRow/Col/Width/Height, pshBinning: optional
     // Completion Type: longRunning
     onSetup("setupPshOpticalArm") { command ->
-        val pshFilter: String       = command.kGet(stringKey("pshFilter"))!!.first
-        val pshPupilMask: String    = command.kGet(stringKey("pshPupilMask"))!!.first
+        val pshFilter: Choice        = command.kGet(choiceKey("pshFilter", choicesOf("F890N", "F891N", "F850M", "F750W", "F810N", "F630N", "F865N")))!!.first
+        val pshPupilMask: Choice     = command.kGet(choiceKey("pshPupilMask", choicesOf("PH-2-0", "SH-0", "SH-2", "SH-5", "Clear")))!!.first
         val pshRoiStartRow: Int?    = command.kGet(intKey("pshRoiStartRow"))?.first
         val pshRoiStartCol: Int?    = command.kGet(intKey("pshRoiStartCol"))?.first
         val pshRoiWidth: Int?       = command.kGet(intKey("pshRoiWidth"))?.first
@@ -109,7 +112,7 @@ val commonB = reusableScript {
             helpKey   = "help.setupPshOpticalArm",
             messageId = "msg.setupPshOpticalArm.start"
         ))
-        println("CommonB: setupPshOpticalArm — pshFilter=$pshFilter, pshPupilMask=$pshPupilMask, " +
+        println("CommonB: setupPshOpticalArm — pshFilter=${pshFilter.name()}, pshPupilMask=${pshPupilMask.name()}, " +
                 "pshRoiStartRow=$pshRoiStartRow, pshRoiStartCol=$pshRoiStartCol, pshRoiWidth=$pshRoiWidth, " +
                 "pshRoiHeight=$pshRoiHeight, pshBinning=$pshBinning, procedureId=$procedureId, observationId=$observationId")
         // TODO: implement — sets up the PSH optical arm for taking PSH images during on-sky procedure startup

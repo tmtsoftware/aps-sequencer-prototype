@@ -4,7 +4,6 @@ import csw.params.core.models.Choice
 import esw.ocs.dsl.core.reusableScript
 import esw.ocs.dsl.core.CommandHandlerScope
 import esw.ocs.dsl.par
-import esw.ocs.dsl.params.stringKey
 import esw.ocs.dsl.params.floatKey
 import esw.ocs.dsl.params.choiceKey
 import esw.ocs.dsl.params.choicesOf
@@ -193,7 +192,7 @@ val icsCommon = reusableScript {
     // (CALIBRATION_SOURCE_MODE, STIMULUS_SOURCE_MODE, ON_SKY_MODE, STANDBY_MODE, STARTUP_MODE)
     // Completion Type: longRunning
     onSetup("setOperatingMode") { command ->
-        val operatingMode: String = command.kGet(stringKey("operatingMode"))!!.first
+        val operatingMode: Choice = command.kGet(choiceKey("operatingMode", choicesOf("CALIBRATION_SOURCE_MODE", "STIMULUS_SOURCE_MODE", "ON_SKY_MODE", "STANDBY_MODE", "STARTUP_MODE")))!!.first
 
         publishEvent(buildProcedureEvent(Prefix.apply(prefix),
             type      = ProcedureEventType.INFO_MESSAGE,
@@ -201,9 +200,9 @@ val icsCommon = reusableScript {
             helpKey   = "help.setOperatingMode",
             messageId = "msg.setOperatingMode.start"
         ))
-        println("IcsCommon: setOperatingMode — operatingMode=$operatingMode")
+        println("IcsCommon: setOperatingMode — operatingMode=${operatingMode.name()}")
         // Per ICD 16.3. STARTUP_MODE is left as a TODO for now.
-        when (operatingMode) {
+        when (operatingMode.name()) {
             "STANDBY_MODE" -> {
                 prepareForStandby()
                 moveAllMechanismsToDefaultPosition()
@@ -224,7 +223,7 @@ val icsCommon = reusableScript {
         }
         delay(1.seconds)
 
-        println("IcsCommon: setOperatingMode — operatingMode=$operatingMode complete")
+        println("IcsCommon: setOperatingMode — operatingMode=${operatingMode.name()} complete")
 
         publishEvent(buildProcedureEvent(Prefix.apply(prefix),
             type      = ProcedureEventType.INFO_MESSAGE,
