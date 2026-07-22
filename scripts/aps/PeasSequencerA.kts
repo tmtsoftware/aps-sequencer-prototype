@@ -27,8 +27,29 @@ script {
         ))
     }
 
+    // Fires the instant the UI calls abortSequence() on this sequencer -- concurrently with
+    // whatever step is currently in-flight, NOT after it (abort doesn't cancel/interrupt a
+    // running step). Just records the fact via operatorAbortRequested (CommonA.kt);
+    // onSetupWithRestoreOnError (RestoreOnErrorWrapper.kt) is what actually acts on it, once
+    // the in-flight handler's own body has finished.
     onAbortSequence {
         println("PeasSequencerA: sequence ABORTED")
+        operatorAbortRequested.set(true)
+
+        // Propagate the abort down the hierarchy. B, C, and D are all directly addressable
+        // from A via getPeasSequencer's obsMode-name substitution -- independent of the
+        // normal command-flow path, where D is otherwise only ever reached indirectly
+        // through B -- so each gets abortSequence() called on it directly here, discarding
+        // its own pending steps and firing its own onAbortSequence handler (if any), rather
+        // than relying on multi-hop cascading through B's/C's own handlers.
+        listOf(SequencerLabel.B, SequencerLabel.C, SequencerLabel.D).forEach { target ->
+            try {
+                getPeasSequencer(SequencerLabel.A, target).abortSequence()
+            } catch (e: Exception) {
+                println("PeasSequencerA: failed to propagate abort to Sequencer ${target.name}: ${e.message}")
+            }
+        }
+
         publishEvent(buildProcedureEvent(Prefix.apply(prefix),
             type      = ProcedureEventType.WARN_MESSAGE,
             dialogKey = "sequence-aborted",
@@ -57,14 +78,17 @@ script {
         ))
     }
 
+    // NOTE: this is now a last-resort safety net only, not the primary error-handling path.
+    // Verified empirically that onGlobalError does NOT fire for a normal step-handler
+    // failure (it never printed even though a step correctly failed and the sequence
+    // correctly completed with Error) -- see RestoreOnErrorWrapper.kt for the actual
+    // mechanism (onSetupWithRestoreOnError's per-handler .onError{} attachment, used
+    // throughout CommonA.kt and RigidBodyAndSegmentFigureA.kt) and for
+    // restoreTelescopeState(), which does the real work formerly attempted here.
+    // Kept in case something genuinely uncaught (e.g. a detached/background coroutine a
+    // handler launches itself) ever does hit this.
     onGlobalError { error ->
-        println("PeasSequencerA: unhandled error - ${error.reason}")
-        publishEvent(buildProcedureEvent(Prefix.apply(prefix),
-            type      = ProcedureEventType.WARN_MESSAGE,
-            dialogKey = "sequencer-error",
-            helpKey   = "help.sequencer.error",
-            messageId = "msg.sequencer.error"
-        ))
+        println("PeasSequencerA: onGlobalError fired (unexpected path) - ${error.reason}")
     }
 
 }

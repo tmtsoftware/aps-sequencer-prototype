@@ -39,6 +39,13 @@ private val messageIdKey   = JKeyType.StringKey().make("messageId", JUnits.NoUni
 // subscription) rather than a SystemEvent.
 private val messageUuidKey = stringKey("messageUuid")
 
+// Optional free-text field -- not part of the messageId lookup convention, used only when
+// a message needs to carry runtime-specific text that messages.properties can't express
+// (e.g. the actual reason string from a ScriptError, as opposed to a static "Sequencer
+// encountered an error" line). Only added to the event when explicitly supplied (see
+// buildProcedureEvent below), so every existing call site is unaffected.
+private val errorTextKey = stringKey("errorText")
+
 // messageUuid is generated internally on every call so that no existing
 // caller needs to change. It gives each published apsProcedureEvent a unique
 // identity even when messageId is a stable, reused, human-readable string -
@@ -51,14 +58,20 @@ fun buildProcedureEvent(
     type: String,
     dialogKey: String,
     helpKey: String,
-    messageId: String
-): SystemEvent =
-    SystemEvent(source, eventName)
+    messageId: String,
+    errorText: String? = null
+): SystemEvent {
+    var event = SystemEvent(source, eventName)
         .add(typeKey.set(type))
         .add(dialogKeyKey.set(dialogKey))
         .add(helpKeyKey.set(helpKey))
         .add(messageIdKey.set(messageId))
         .add(messageUuidKey.set(UUID.randomUUID().toString()))
+    if (errorText != null) {
+        event = event.add(errorTextKey.set(errorText))
+    }
+    return event
+}
 
 fun messageUuidOf(event: SystemEvent): String? =
     event.kGet(messageUuidKey)?.first

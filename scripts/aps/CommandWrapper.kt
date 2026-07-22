@@ -2,6 +2,7 @@ package aps
 
 import csw.location.api.javadsl.JComponentType
 import csw.params.commands.CommandResponse
+import csw.params.commands.Result
 import csw.params.commands.Sequence
 import csw.params.commands.SequenceCommand
 import csw.params.commands.Setup
@@ -21,7 +22,12 @@ import java.util.UUID
 
 enum class SequencerLabel { A, B, C, D }
 
-fun ScriptScope.getPeasSequencer(source: SequencerLabel, target: SequencerLabel): RichSequencer {
+// Receiver widened from ScriptScope to CswHighLevelDslApi so this is callable from
+// HandlerScope contexts too (e.g. onAbortSequence in PeasSequencerA.kts, which needs it to
+// propagate an abort directly to B/C/D). Backward compatible: ScriptScope already extends
+// CswHighLevelDslApi transitively, so every existing scriptScope.getPeasSequencer(...) call
+// site keeps compiling unchanged.
+fun CswHighLevelDslApi.getPeasSequencer(source: SequencerLabel, target: SequencerLabel): RichSequencer {
     val targetMode = obsMode.name().replace("Sequencer${source.name}", "Sequencer${target.name}")
     return Sequencer(JSubsystem.APS, ObsMode(targetMode), 120.seconds)
 }
@@ -38,15 +44,32 @@ fun ScriptScope.isSoftwareOnlyMode(): Boolean = obsMode.name().endsWith("_Softwa
 // both top-level sequencer scripts and reusableScript onSetup handlers like IcsCommon.kt.
 fun CswHighLevelDslApi.isOperationalMode(): Boolean = obsMode.name().endsWith("Operational")
 
-suspend fun ScriptScope.sendToGlc(command: Setup): CommandResponse.SubmitResponse {
+// Receiver is CswHighLevelDslApi (not ScriptScope) so this is callable from HandlerScope
+// contexts too (e.g. onGlobalError in PeasSequencerA.kts), which need it for GLC
+// restore-on-error via GlcFacade.kt. Backward compatible: ScriptScope already extends
+// CswHighLevelDslApi transitively.
+//
+// Gated on isOperationalMode() (not isSoftwareOnlyMode()) -- GLC hardware/simulator won't
+// exist for years per Scott, so every obsMode reachable from the UI today (SoftwareOnlyMode,
+// ApsStandaloneMode) must simulate; only the (currently unreachable, concept-only)
+// ApsOperationalMode would ever attempt the real glc.submitAndWait() branch.
+//
+// simulatedResult lets a caller (e.g. GlcFacade.saveSensorSettings()) supply a plausible
+// fake Result for the simulate branch to hand back, since sendToGlc itself has no way to
+// know what result shape an arbitrary GLC command expects. Defaults to Result.emptyResult()
+// for callers that don't need anything back (e.g. restoreSensorSettings()).
+suspend fun CswHighLevelDslApi.sendToGlc(
+    command: Setup,
+    simulatedResult: Result = Result.emptyResult()
+): CommandResponse.SubmitResponse {
     val glc = Assembly(JSubsystem.M1CS, "GLC", defaultTimeout = 60.seconds)
-    return if (!isSoftwareOnlyMode()) {
+    return if (isOperationalMode()) {
         glc.submitAndWait(command)
     } else {
         println("sendToGlc: simulating (obsMode=${obsMode.name()}) ...")
         delay(5.seconds)
         println("sendToGlc: simulation complete")
-        CommandResponse.Completed(Id(UUID.randomUUID().toString()))
+        CommandResponse.Completed(Id(UUID.randomUUID().toString()), simulatedResult)
     }
 }
 

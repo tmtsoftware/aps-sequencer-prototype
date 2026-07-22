@@ -23,7 +23,7 @@ val rigidBodyAndSegmentFigureA = reusableScript {
     // ORIGINAL HANDLERS — prototype steps carried over from prior work
     // =========================================================================
 
-    onSetup("cmd-m1cs-moves") { command ->
+    onSetupWithRestoreOnError("cmd-m1cs-moves") { command ->
         publishEvent(buildProcedureEvent(Prefix.apply(prefix),
             type      = ProcedureEventType.INFO_MESSAGE,
             dialogKey = "cmd-m1cs-moves-start",
@@ -40,7 +40,7 @@ val rigidBodyAndSegmentFigureA = reusableScript {
         ))
     }
 
-    onSetup("calc-colorstep") { command ->
+    onSetupWithRestoreOnError("calc-colorstep") { command ->
         publishEvent(buildProcedureEvent(Prefix.apply(prefix),
             type      = ProcedureEventType.INFO_MESSAGE,
             dialogKey = "calc-colorstep-start",
@@ -57,7 +57,7 @@ val rigidBodyAndSegmentFigureA = reusableScript {
         ))
     }
 
-    onSetup("calc-tt-offsets-to-acts") { command ->
+    onSetupWithRestoreOnError("calc-tt-offsets-to-acts") { command ->
         publishEvent(buildProcedureEvent(Prefix.apply(prefix),
             type      = ProcedureEventType.INFO_MESSAGE,
             dialogKey = "calc-tt-offsets-start",
@@ -74,7 +74,7 @@ val rigidBodyAndSegmentFigureA = reusableScript {
         ))
     }
 
-    onSetup("calc-decompose-acts") { command ->
+    onSetupWithRestoreOnError("calc-decompose-acts") { command ->
         publishEvent(buildProcedureEvent(Prefix.apply(prefix),
             type      = ProcedureEventType.INFO_MESSAGE,
             dialogKey = "calc-decompose-acts-start",
@@ -91,7 +91,7 @@ val rigidBodyAndSegmentFigureA = reusableScript {
         ))
     }
 
-    onSetup("send-sequence-to-sequencerB") { command: csw.params.commands.Setup ->
+    onSetupWithRestoreOnError("send-sequence-to-sequencerB") { command: csw.params.commands.Setup ->
         println("RigidBodyAndSegmentFigureA: received send-sequence-to-sequencerB")
         publishEvent(buildProcedureEvent(Prefix.apply(prefix),
             type      = ProcedureEventType.INFO_MESSAGE,
@@ -121,7 +121,7 @@ val rigidBodyAndSegmentFigureA = reusableScript {
     // =========================================================================
 
     // ICD 30.2.1.33 — no parameters
-    onSetup("rbsfGetCurrentWhSettings") { command ->
+    onSetupWithRestoreOnError("rbsfGetCurrentWhSettings") { command ->
         publishEvent(buildProcedureEvent(Prefix.apply(prefix),
             type      = ProcedureEventType.INFO_MESSAGE,
             dialogKey = "rbsfGetCurrentWhSettings-start",
@@ -145,7 +145,7 @@ val rigidBodyAndSegmentFigureA = reusableScript {
     //   n <= exposureCount : submit B1 (take exposure)
     //   n > 1              : submit C1 (process previous exposure)
     //   both apply         : submit B1 and C1 in parallel via par
-    onSetup("rbsfTakeExposureWhileProcessingPrevious") { command ->
+    onSetupWithRestoreOnError("rbsfTakeExposureWhileProcessingPrevious") { command ->
         val exposureCount: Int    = command.kGet(intKey("exposureCount"))!!.first
         val rbsfB1JsonStr: String = command.kGet(stringKey("rbsfB1SerializedSequence"))!!.first
         val rbsfC1JsonStr: String = command.kGet(stringKey("rbsfC1SerializedSequence"))!!.first
@@ -163,6 +163,17 @@ val rigidBodyAndSegmentFigureA = reusableScript {
         val seqC1 = aps.deserializeSequence(rbsfC1JsonStr)
 
         for (n in 1..exposureCount + 1) {
+            // AbortSequence sent to A only discards A's own PENDING steps -- it has no visibility
+            // into this loop, which is just Kotlin control flow inside ONE in-flight step from A's
+            // Engine's perspective. Without this check, an operator abort mid-loop would let the
+            // current exposure finish (correct -- in-flight work isn't interrupted) but then just
+            // keep starting new iterations regardless (the bug we saw: "everything just continued").
+            // Checking here, between iterations, stops new ones from starting once abort is
+            // requested, while still letting whatever's currently in-flight resolve naturally.
+            if (operatorAbortRequested.get()) {
+                println("RigidBodyAndSegmentFigureA: rbsfTakeExposureWhileProcessingPrevious — operator abort requested, stopping iteration loop early at n=$n")
+                break
+            }
             println("RigidBodyAndSegmentFigureA: rbsfTakeExposureWhileProcessingPrevious — iteration $n of ${exposureCount + 1}")
             when {
                 n == 1 -> {
@@ -215,7 +226,7 @@ val rigidBodyAndSegmentFigureA = reusableScript {
     }
 
     // ICD 30.2.1.35 — no parameters
-    onSetup("rbsfCalcAverages") { command ->
+    onSetupWithRestoreOnError("rbsfCalcAverages") { command ->
         publishEvent(buildProcedureEvent(Prefix.apply(prefix),
             type      = ProcedureEventType.INFO_MESSAGE,
             dialogKey = "rbsfCalcAverages-start",
@@ -234,7 +245,7 @@ val rigidBodyAndSegmentFigureA = reusableScript {
     }
 
     // ICD 30.2.1.36 — no parameters
-    onSetup("rbsfRenderAvgCentroidOffsetsDisplay") { command ->
+    onSetupWithRestoreOnError("rbsfRenderAvgCentroidOffsetsDisplay") { command ->
         publishEvent(buildProcedureEvent(Prefix.apply(prefix),
             type      = ProcedureEventType.VIZ_DISPLAY,
             dialogKey = "rbsfRenderAvgCentroidOffsetsDisplay",
@@ -247,7 +258,7 @@ val rigidBodyAndSegmentFigureA = reusableScript {
     }
 
     // ICD 30.2.1.37 — no parameters
-    onSetup("rbsfRenderM1CmdsDisplay") { command ->
+    onSetupWithRestoreOnError("rbsfRenderM1CmdsDisplay") { command ->
         publishEvent(buildProcedureEvent(Prefix.apply(prefix),
             type      = ProcedureEventType.VIZ_DISPLAY,
             dialogKey = "rbsfRenderM1CmdsDisplay",
@@ -262,7 +273,7 @@ val rigidBodyAndSegmentFigureA = reusableScript {
     // ICD 30.2.1.38 — promptAutoResponse: enum(YES, NO) optional
     //                  blocks until operator responds (unless promptAutoResponse is supplied);
     //                  stores result in rbsfM1OpResp global for use by subsequent steps
-    onSetup("rbsfAskOpIfCmdM1") { command ->
+    onSetupWithRestoreOnError("rbsfAskOpIfCmdM1") { command ->
         val promptAutoResponse: String? = command.kGet(stringKey("promptAutoResponse"))?.first
 
         if (promptAutoResponse != null) {
@@ -302,7 +313,7 @@ val rigidBodyAndSegmentFigureA = reusableScript {
     }
 
     // ICD 30.2.1.39 — rbsfB2SerializedSequence: String, rbsfC2SerializedSequence: String
-    onSetup("rbsfCmdM1CalcWhCmdsWhileAskOpCmdM2") { command ->
+    onSetupWithRestoreOnError("rbsfCmdM1CalcWhCmdsWhileAskOpCmdM2") { command ->
         val rbsfB2JsonStr: String = command.kGet(stringKey("rbsfB2SerializedSequence"))!!.first
         val rbsfC2JsonStr: String = command.kGet(stringKey("rbsfC2SerializedSequence"))!!.first
 
@@ -334,7 +345,7 @@ val rigidBodyAndSegmentFigureA = reusableScript {
     }
 
     // ICD 30.2.1.40 — rbsfB3SerializedSequence: String, rbsfC3SerializedSequence: String
-    onSetup("rbsfAskAndCmdWhWhileCmdM2") { command ->
+    onSetupWithRestoreOnError("rbsfAskAndCmdWhWhileCmdM2") { command ->
         val rbsfB3JsonStr: String = command.kGet(stringKey("rbsfB3SerializedSequence"))!!.first
         val rbsfC3JsonStr: String = command.kGet(stringKey("rbsfC3SerializedSequence"))!!.first
 

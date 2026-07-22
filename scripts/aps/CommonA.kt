@@ -6,6 +6,7 @@ import esw.ocs.dsl.core.reusableScript
 import esw.ocs.dsl.core.ScriptScope
 import esw.ocs.dsl.params.stringKey
 import esw.ocs.dsl.params.floatKey
+import esw.ocs.dsl.params.intKey
 import esw.ocs.dsl.params.choiceKey
 import esw.ocs.dsl.params.choicesOf
 import esw.ocs.dsl.params.kGet
@@ -14,6 +15,44 @@ import kotlin.time.Duration.Companion.seconds
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.async
+import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicReference
+
+// GLC sensor settings snapshot key, captured at the start of alignmentProcedureStartup via
+// saveSensorSettings() (GlcFacade.kt) and consumed by restoreTelescopeState()
+// (RestoreOnErrorWrapper.kt) whenever any onSetupWithRestoreOnError-wrapped handler on this
+// sequencer either throws or completes after an operator abort. File-level (package "aps")
+// rather than local to the reusableScript block below so it's visible from
+// RestoreOnErrorWrapper.kt and PeasSequencerA.kts too -- all compiled together as part of
+// the same sbt-kotlin-plugin module. Reset to null once consumed by restoreTelescopeState(),
+// so a stale key from a prior sequence run is never reused.
+//
+// Uses AtomicReference rather than a plain var (even @Volatile) -- written in
+// alignmentProcedureStartup's coroutine, read in restoreTelescopeState's, which can
+// legitimately run on different underlying threads. @Volatile on this top-level property was
+// tried first and did NOT fix the cross-thread visibility problem in practice (verified:
+// operatorAbortRequested below had the same issue with @Volatile and switching to
+// AtomicBoolean is what actually fixed it) -- rather than keep debugging exactly why
+// @Volatile didn't take effect here, AtomicReference is the unambiguous, guaranteed-correct
+// alternative.
+val sensorSnapshotKeyRef = AtomicReference<Int?>(null)
+
+// Set by PeasSequencerA.kts's onAbortSequence handler when the UI calls abortSequence() on
+// this sequencer (operator pressed Abort -- either the top-level Abort button, or Abort from
+// a step's WARNING prompt). onAbortSequence fires concurrently with whatever step is
+// currently in-flight (abort does not cancel/interrupt a running step -- see
+// SequencerBehavior.scala's discardPending, which only removes PENDING steps), so this flag
+// is just recorded here; onSetupWithRestoreOnError (RestoreOnErrorWrapper.kt) is what checks
+// it AFTER a handler's own body completes, guaranteeing restoration only runs once whatever
+// was in-flight (e.g. the full B/D submitAndWait chain from rbsfTakeExposureWhileProcessingPrevious)
+// has actually finished.
+//
+// @Volatile: verified necessary, not precautionary -- without it, the exposure loop in
+// rbsfTakeExposureWhileProcessingPrevious (RigidBodyAndSegmentFigureA.kt) kept reading this as
+// false and running all remaining iterations, even after onAbortSequence had already set it to
+// true on a different thread/coroutine. onAbortSequence and the loop's own check are not
+// guaranteed to run on the same thread, so a plain var gave no visibility guarantee at all.
+val operatorAbortRequested = AtomicBoolean(false)
 
 val commonA = reusableScript {
 
@@ -23,11 +62,33 @@ val commonA = reusableScript {
     // COMMON HANDLERS — shared across multiple procedures on Sequencer A
     // =========================================================================
 
-    // ICD 30.2.1.1 — filter: enum required, pupilMask: enum required, analogGainMode: enum optional
-    onSetup("alignmentProcedureStartup") { command ->
+    // ICD 30.2.1.1 — filter: enum required, pupilMask: enum required, analogGainMode: enum optional.
+    // pshRoiStartRow/Col/Width/Height, pshBinning, procedureId, observationId are NOT part of the
+    // ICD's declared parameter set for this command -- added here as prototype-only extensions so
+    // configureDetector (downstream, via setupPshOpticalArm) has real, editable values instead of
+    // hardcoded placeholders. ROI/binning stay optional (matching configureDetector's own
+    // optionality); procedureId/observationId are required here since there's no other source for
+    // them yet.
+    //
+    // Uses onSetupWithRestoreOnError (not raw onSetup) -- see RestoreOnErrorWrapper.kt -- so any
+    // exception this handler throws (including one propagated up from B/D via the default
+    // submit()/submitAndWait() resumeOnError=false behavior), or an operator abort recorded via
+    // operatorAbortRequested, triggers restoreTelescopeState().
+    onSetupWithRestoreOnError("alignmentProcedureStartup") { command ->
+        // Snapshot GLC's current sensor settings before anything else runs, per ICD
+        // M1CS-APS SDB §2.2.1.1.
+        sensorSnapshotKeyRef.set(scriptScope.saveSensorSettings())
+
         val filter: Choice          = command.kGet(choiceKey("filter", choicesOf("F890N", "F891N", "F850M", "F750W", "F810N", "F630N", "F865N")))!!.first
         val pupilMask: Choice       = command.kGet(choiceKey("pupilMask", choicesOf("PH-2-0", "SH-0", "SH-2", "SH-5", "Clear")))!!.first
         val analogGainMode: Choice? = command.kGet(choiceKey("analogGainMode", choicesOf("LOW", "HIGH", "HDR")))?.first
+        val pshRoiStartRow: Int?    = command.kGet(intKey("pshRoiStartRow"))?.first
+        val pshRoiStartCol: Int?    = command.kGet(intKey("pshRoiStartCol"))?.first
+        val pshRoiWidth: Int?       = command.kGet(intKey("pshRoiWidth"))?.first
+        val pshRoiHeight: Int?      = command.kGet(intKey("pshRoiHeight"))?.first
+        val pshBinning: Int?        = command.kGet(intKey("pshBinning"))?.first
+        val procedureId: String     = command.kGet(stringKey("procedureId"))!!.first
+        val observationId: String   = command.kGet(stringKey("observationId"))!!.first
 
         publishEvent(buildProcedureEvent(Prefix.apply(prefix),
             type      = ProcedureEventType.INFO_MESSAGE,
@@ -35,7 +96,9 @@ val commonA = reusableScript {
             helpKey   = "help.alignmentProcedureStartup",
             messageId = "msg.alignmentProcedureStartup.start"
         ))
-        println("CommonA: alignmentProcedureStartup — filter=${filter.name()}, pupilMask=${pupilMask.name()}, analogGainMode=${analogGainMode?.name()}")
+        println("CommonA: alignmentProcedureStartup — filter=${filter.name()}, pupilMask=${pupilMask.name()}, analogGainMode=${analogGainMode?.name()}, " +
+                "pshRoiStartRow=$pshRoiStartRow, pshRoiStartCol=$pshRoiStartCol, pshRoiWidth=$pshRoiWidth, pshRoiHeight=$pshRoiHeight, " +
+                "pshBinning=$pshBinning, procedureId=$procedureId, observationId=$observationId")
 
         // Step 1: set the APS Instrument Operating Mode to ON_SKY_MODE (ICS Sequencer).
         // sendToIcsSequencer applies the isSoftwareOnlyMode() facade internally.
@@ -58,7 +121,6 @@ val commonA = reusableScript {
         // directly since PSH's enums match this command's own exactly.
         // TODO: pitToPshPr*Offset values should come from the most recent Pupil Registration
         // Calibration Procedure (peas-procedure-data-service) — placeholders (0.0f) until that's wired up.
-        // TODO: procedureId/observationId placeholders — should come from the current procedure/session context.
         val pitPupilMaskValue = if (pupilMask.name() == "Clear") "Clear" else "PH-1-1"
         coroutineScope {
             val setupPitLoopDeferred = async {
@@ -72,11 +134,16 @@ val commonA = reusableScript {
                 scriptScope.sendToPitSequencer(setupPitLoopCmd)
             }
             val setupPshOpticalArmDeferred = async {
-                val setupPshOpticalArmCmd = Setup(prefix, "setupPshOpticalArm")
+                var setupPshOpticalArmCmd = Setup(prefix, "setupPshOpticalArm")
                     .add(choiceKey("pshFilter", choicesOf("F890N", "F891N", "F850M", "F750W", "F810N", "F630N", "F865N")).set(filter))
                     .add(choiceKey("pshPupilMask", choicesOf("PH-2-0", "SH-0", "SH-2", "SH-5", "Clear")).set(pupilMask))
-                    .add(stringKey("procedureId").set("TODO-procedureId"))
-                    .add(stringKey("observationId").set("TODO-observationId"))
+                    .add(stringKey("procedureId").set(procedureId))
+                    .add(stringKey("observationId").set(observationId))
+                pshRoiStartRow?.let { setupPshOpticalArmCmd = setupPshOpticalArmCmd.add(intKey("pshRoiStartRow").set(it)) }
+                pshRoiStartCol?.let { setupPshOpticalArmCmd = setupPshOpticalArmCmd.add(intKey("pshRoiStartCol").set(it)) }
+                pshRoiWidth?.let { setupPshOpticalArmCmd = setupPshOpticalArmCmd.add(intKey("pshRoiWidth").set(it)) }
+                pshRoiHeight?.let { setupPshOpticalArmCmd = setupPshOpticalArmCmd.add(intKey("pshRoiHeight").set(it)) }
+                pshBinning?.let { setupPshOpticalArmCmd = setupPshOpticalArmCmd.add(intKey("pshBinning").set(it)) }
                 val sequencerB = scriptScope.getPeasSequencer(SequencerLabel.A, SequencerLabel.B)
                 sequencerB.submitAndWait(Sequence.create(listOf(setupPshOpticalArmCmd)))
             }
@@ -103,7 +170,7 @@ val commonA = reusableScript {
     }
 
     // ICD 30.2.1.2 — all parameters required except aptGainMode (optional)
-    onSetup("alignmentProcedureNewStarStartup") { command ->
+    onSetupWithRestoreOnError("alignmentProcedureNewStarStartup") { command ->
         val pitFilter: Choice                             = command.kGet(choiceKey("pitFilter", choicesOf("F890N", "F891N", "F850M", "F750W", "F810N", "F630N", "F865N")))!!.first
         val pitPupilMask: Choice                          = command.kGet(choiceKey("pitPupilMask", choicesOf("PH-2-0", "SH-0", "SH-2", "SH-5", "Clear")))!!.first
         val pitIntTime: Float                             = command.kGet(floatKey("pitIntTime"))!!.first
